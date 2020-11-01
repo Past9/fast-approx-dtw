@@ -1,5 +1,3 @@
-#![feature(min_const_generics)]
-
 #[macro_use]
 mod fadtw;
 use rand;
@@ -11,6 +9,21 @@ use fadtw::*;
 
 const STACK_SIZE: usize = 32 * 1024 * 1024;
 
+fn main() {
+  let sig_y: [u8; SIG_SIZE] = [1, 3, 1, 5];
+  let sig_x: [u8; SIG_SIZE] = [1, 1, 5, 1];
+
+  let err_map = gen_err_map(sig_y, sig_x, SIG_SIZE, &None);
+  let path_map = find_path(&err_map, SIG_SIZE, &None);
+
+  println!("{:?}", path_map);
+
+  //let tc = get_paths(1, 1, &err_map, 0);
+
+  //println!("{:?}", tc);
+}
+
+/*
 fn main() {
   let child = thread::Builder::new()
     .stack_size(STACK_SIZE)
@@ -39,3 +52,4 @@ fn rand_signal<const N: usize>() -> [u8; N] {
   }
   sig
 }
+*/
