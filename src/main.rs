@@ -1,7 +1,10 @@
 #![feature(min_const_generics)]
 
+#[macro_use]
 mod alloc;
+mod downsample;
 mod fadtw;
+mod path;
 mod stack_vec;
 
 use rand;
@@ -11,23 +14,31 @@ use std::time::SystemTime;
 
 use fadtw::*;
 
-const STACK_SIZE: usize = 32 * 1024 * 1024;
+const STACK_SIZE: usize = 128 * 1024 * 1024;
+
+pub const SIG_SIZE: usize = 128;
+pub const NUM_DOWNSAMPLES: usize = 7; // 2nd logarithm of SIG_SIZE
 
 fn main() {
+  /*
   let child = thread::Builder::new()
     .stack_size(STACK_SIZE)
     .spawn(run)
     .unwrap();
 
   child.join().unwrap();
+  */
+
+  run();
 }
 
 fn run() {
-  let start = SystemTime::now();
   let sig_y = rand_signal();
   let sig_x = rand_signal();
-  for _ in 0..576 {
-    let path = fast_approx_dtw(sig_y, sig_x);
+
+  let start = SystemTime::now();
+  for _ in 0..57600 {
+    fast_approx_dtw::<2049>(&sig_y, &sig_x);
   }
   let elapsed = SystemTime::now().duration_since(start);
 

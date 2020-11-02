@@ -1,83 +1,31 @@
-pub const SIG_SIZE: usize = 1024;
-pub const NUM_DOWNSAMPLES: usize = 10; // 2nd logarithm of SIG_SIZE
-pub const MAX_PATH_SIZE: usize = 2049; // SIG_SIZE * 2 + 1
+use crate::downsample::Downsample;
+use crate::path::*;
+use crate::NUM_DOWNSAMPLES;
+use crate::SIG_SIZE;
 
-use crate::alloc::alloc;
-use crate::stack_vec::StackVec;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Move {
-  Stop,
-  Vertical,
-  Horizontal,
-  Diagonal,
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct Downsample {
-  pub signal: [u8; SIG_SIZE],
-  pub len: usize,
-}
-impl Downsample {
-  #[inline]
-  pub fn create_one(signal: &[u8; SIG_SIZE], len: usize) -> Option<Downsample> {
-    if len % 2 != 0 {
-      return None;
-    }
-
-    let mut downsample = Downsample {
-      signal: alloc(false),
-      len: len / 2,
-    };
-
-    for t in 0..downsample.len {
-      downsample.signal[t] = signal[t * 2] / 2 + signal[t * 2 + 1] / 2
-    }
-
-    Some(downsample)
-  }
-
-  #[inline]
-  pub fn create_all(signal: [u8; SIG_SIZE]) -> [Downsample; NUM_DOWNSAMPLES] {
-    let mut downsamples: [Downsample; NUM_DOWNSAMPLES] = alloc(false);
-
-    let mut last_downsample = Downsample {
-      signal,
-      len: SIG_SIZE,
-    };
-
-    for i in 0..NUM_DOWNSAMPLES {
-      match Downsample::create_one(&last_downsample.signal, last_downsample.len) {
-        Some(ds) => {
-          downsamples[NUM_DOWNSAMPLES - i - 1] = last_downsample;
-          last_downsample = ds;
-        }
-        None => {
-          break;
-        }
-      }
-    }
-
-    downsamples
-  }
-}
-
-pub fn solve_dtw(sig_y: [u8; SIG_SIZE], sig_x: [u8; SIG_SIZE]) -> Path {
-  let err_map = gen_err_map(sig_y, sig_x, SIG_SIZE, &None);
+#[inline]
+pub fn solve_dtw<const MAX_PATH_LEN: usize>(
+  sig_y: &[u8; SIG_SIZE],
+  sig_x: &[u8; SIG_SIZE],
+) -> Path<MAX_PATH_LEN> {
+  let err_map = gen_err_map::<MAX_PATH_LEN>(sig_y, sig_x, SIG_SIZE, &None);
   map_paths(&err_map, SIG_SIZE, &None)
 }
 
 #[inline]
-pub fn fast_approx_dtw(sig_y: [u8; SIG_SIZE], sig_x: [u8; SIG_SIZE]) -> Path {
+pub fn fast_approx_dtw<const MAX_PATH_LEN: usize>(
+  sig_y: &[u8; SIG_SIZE],
+  sig_x: &[u8; SIG_SIZE],
+) -> Path<MAX_PATH_LEN> {
   let downsamples_y = Downsample::create_all(sig_y);
   let downsamples_x = Downsample::create_all(sig_x);
 
-  let mut last_downsample_path: Option<Path> = None;
+  let mut last_downsample_path: Option<Path<MAX_PATH_LEN>> = None;
 
   for ds in 0..NUM_DOWNSAMPLES {
     let err_map = gen_err_map(
-      downsamples_y[ds].signal,
-      downsamples_x[ds].signal,
+      &downsamples_y[ds].signal,
+      &downsamples_x[ds].signal,
       downsamples_y[ds].len,
       &last_downsample_path,
     );
@@ -86,116 +34,20 @@ pub fn fast_approx_dtw(sig_y: [u8; SIG_SIZE], sig_x: [u8; SIG_SIZE]) -> Path {
       downsamples_y[ds].len,
       &last_downsample_path,
     ));
-    let ds_path = last_downsample_path.clone().unwrap();
-    let x = 0;
   }
 
   last_downsample_path.unwrap()
 }
 
-#[derive(PartialEq, Debug, Copy, Clone)]
-pub struct PathPoint {
-  error: u32,
-  to_parent: Move,
-}
-impl PathPoint {
-  pub fn empty() -> PathPoint {
-    PathPoint {
-      error: 0,
-      to_parent: Move::Stop,
-    }
-  }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct Path {
-  len: usize,
-  moves: [PathPoint; MAX_PATH_SIZE],
-}
-impl Path {
-  fn new(map: &[[PathPoint; SIG_SIZE]; SIG_SIZE]) -> Path {
-    let mut y = 0;
-    let mut x = 0;
-    let mut len = 0;
-    let mut moves: [PathPoint; MAX_PATH_SIZE] = alloc(false);
-    let mut current_cell = map[y][x];
-
-    loop {
-      match current_cell.to_parent {
-        Move::Vertical => {
-          y += 1;
-        }
-        Move::Horizontal => {
-          x += 1;
-        }
-        Move::Diagonal => {
-          y += 1;
-          x += 1;
-        }
-        Move::Stop => {}
-      }
-
-      moves[len] = current_cell;
-      current_cell = map[y][x];
-      len += 1;
-      if current_cell.to_parent == Move::Stop {
-        break;
-      }
-    }
-
-    Path { len, moves }
-  }
-
-  pub fn iter(&self) -> PathMapIterator {
-    PathMapIterator::new(self.len, &self.moves)
-  }
-
-  pub fn len(&self) -> usize {
-    self.len
-  }
-}
-
-pub struct PathMapIterator<'a> {
-  len: usize,
-  moves: &'a [PathPoint; MAX_PATH_SIZE],
-  pos: usize,
-}
-impl<'a> PathMapIterator<'a> {
-  fn new(len: usize, moves: &'a [PathPoint; MAX_PATH_SIZE]) -> PathMapIterator<'a> {
-    PathMapIterator { len, moves, pos: 0 }
-  }
-}
-impl<'a> Iterator for PathMapIterator<'a> {
-  type Item = PathPoint;
-
-  fn next(&mut self) -> Option<Self::Item> {
-    if self.pos >= self.len {
-      return None;
-    } else {
-      let item = Some(self.moves[self.pos]);
-      self.pos += 1;
-      return item;
-    }
-  }
-}
-impl<'a> DoubleEndedIterator for PathMapIterator<'a> {
-  fn next_back(&mut self) -> Option<Self::Item> {
-    if self.pos >= self.len {
-      return None;
-    } else {
-      let item = Some(self.moves[self.len - self.pos - 1]);
-      self.pos += 1;
-      return item;
-    }
-  }
-}
-
-pub fn map_paths(
+#[inline]
+pub fn map_paths<const MAX_PATH_LEN: usize>(
   err_map: &[[u32; SIG_SIZE]; SIG_SIZE],
   sample_size: usize,
-  downsample_path: &Option<Path>,
-) -> Path {
-  let mut path_map: [[PathPoint; SIG_SIZE]; SIG_SIZE] = alloc(false);
+  downsample_path: &Option<Path<MAX_PATH_LEN>>,
+) -> Path<MAX_PATH_LEN> {
+  let mut path_map: [[PathPoint; SIG_SIZE]; SIG_SIZE] =
+    unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+  //alloc!(false);
 
   match downsample_path {
     Some(dp) => {
@@ -211,7 +63,6 @@ pub fn map_paths(
       calc_path_cell(y - 1, x - 1, &mut path_map, &err_map, sample_size);
 
       for path_move in dp.iter().rev() {
-        //println!("YX {} {} {} {:?}", y, x, sample_size, path_move);
         match path_move.to_parent {
           Move::Vertical => {
             y -= 2;
@@ -256,9 +107,49 @@ pub fn map_paths(
     }
   };
 
-  Path::new(&path_map)
+  get_best_path(path_map)
 }
 
+#[inline]
+pub fn get_best_path<const MAX_PATH_LEN: usize>(
+  path_map: [[PathPoint; SIG_SIZE]; SIG_SIZE],
+) -> Path<MAX_PATH_LEN> {
+  let mut y = 0;
+  let mut x = 0;
+  let mut current_cell = path_map[y][x];
+  let mut path = Path::empty(false);
+  //let mut len = 0;
+  //let mut moves: [PathPoint; MAX_PATH_LEN] = alloc(false);
+
+  loop {
+    match current_cell.to_parent {
+      Move::Vertical => {
+        y += 1;
+      }
+      Move::Horizontal => {
+        x += 1;
+      }
+      Move::Diagonal => {
+        y += 1;
+        x += 1;
+      }
+      Move::Stop => {}
+    }
+
+    path.push(current_cell);
+
+    current_cell = path_map[y][x];
+    if current_cell.to_parent == Move::Stop {
+      break;
+    }
+  }
+
+  path
+
+  //Path { len, moves }
+}
+
+#[inline]
 pub fn calc_path_cell(
   y: usize,
   x: usize,
@@ -275,9 +166,6 @@ pub fn calc_path_cell(
   }
 
   if y == sample_size - 1 {
-    if err_map[y][x] == std::u32::MAX {
-      //println!("{} {} {} {:?}", sample_size, y, x, err_map);
-    }
     path_map[y][x] = PathPoint {
       error: err_map[y][x] + path_map[y][x + 1].error,
       to_parent: Move::Horizontal,
@@ -286,9 +174,6 @@ pub fn calc_path_cell(
   }
 
   if x == sample_size - 1 {
-    if err_map[y][x] == std::u32::MAX {
-      //println!("{} {} {} {:?}", sample_size, y, x, err_map);
-    }
     path_map[y][x] = PathPoint {
       error: err_map[y][x] + path_map[y + 1][x].error,
       to_parent: Move::Vertical,
@@ -296,27 +181,24 @@ pub fn calc_path_cell(
     return;
   }
 
-  let top_err = match err_map[y + 1][x] == std::u32::MAX {
-    true => std::u32::MAX,
+  let top_err = match err_map[y + 1][x] == u32::MAX {
+    true => u32::MAX,
     false => path_map[y + 1][x].error,
   };
 
-  let right_err = match err_map[y][x + 1] == std::u32::MAX {
-    true => std::u32::MAX,
+  let right_err = match err_map[y][x + 1] == u32::MAX {
+    true => u32::MAX,
     false => path_map[y][x + 1].error,
   };
 
-  let diag_err = match err_map[y + 1][x + 1] == std::u32::MAX {
-    true => std::u32::MAX,
+  let diag_err = match err_map[y + 1][x + 1] == u32::MAX {
+    true => u32::MAX,
     false => path_map[y + 1][x + 1].error,
   };
 
-  let min_err = std::cmp::min(top_err, std::cmp::min(right_err, diag_err));
+  let min_err = core::cmp::min(top_err, core::cmp::min(right_err, diag_err));
 
   if diag_err == min_err {
-    if err_map[y][x] == std::u32::MAX {
-      //println!("{} {} {} {:?}", sample_size, y, x, err_map);
-    }
     path_map[y][x] = PathPoint {
       error: err_map[y][x] + diag_err,
       to_parent: Move::Diagonal,
@@ -325,9 +207,6 @@ pub fn calc_path_cell(
   }
 
   if top_err == min_err {
-    if err_map[y][x] == std::u32::MAX {
-      //println!("{} {} {} {:?}", sample_size, y, x, err_map);
-    }
     path_map[y][x] = PathPoint {
       error: err_map[y][x] + top_err,
       to_parent: Move::Vertical,
@@ -336,9 +215,6 @@ pub fn calc_path_cell(
   }
 
   if right_err == min_err {
-    if err_map[y][x] == std::u32::MAX {
-      //println!("{} {} {} {:?}", sample_size, y, x, err_map);
-    }
     path_map[y][x] = PathPoint {
       error: err_map[y][x] + right_err,
       to_parent: Move::Horizontal,
@@ -348,24 +224,26 @@ pub fn calc_path_cell(
 }
 
 #[inline]
-pub fn gen_err_map(
-  sig_y: [u8; SIG_SIZE],
-  sig_x: [u8; SIG_SIZE],
+pub fn gen_err_map<const MAX_PATH_LEN: usize>(
+  sig_y: &[u8; SIG_SIZE],
+  sig_x: &[u8; SIG_SIZE],
   sample_size: usize,
-  downsample_path: &Option<Path>,
+  downsample_path: &Option<Path<MAX_PATH_LEN>>,
 ) -> [[u32; SIG_SIZE]; SIG_SIZE] {
   // Allocate space for the error map
-  let mut err_map: [[u32; SIG_SIZE]; SIG_SIZE] = alloc(false);
+  let mut err_map: [[u32; SIG_SIZE]; SIG_SIZE] =
+    unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+  //alloc!(false);
 
   // If we're building a subsample map, then there are uninitialized
   // values to the top and right of the top-right cell. We need to set
   // them to infinity so they don't mess up our min calculations later.
   if sample_size < SIG_SIZE {
-    err_map[sample_size][sample_size - 2] = std::u32::MAX;
-    err_map[sample_size][sample_size - 1] = std::u32::MAX;
-    err_map[sample_size][sample_size] = std::u32::MAX;
-    err_map[sample_size - 1][sample_size] = std::u32::MAX;
-    err_map[sample_size - 2][sample_size] = std::u32::MAX;
+    err_map[sample_size][sample_size - 2] = u32::MAX;
+    err_map[sample_size][sample_size - 1] = u32::MAX;
+    err_map[sample_size][sample_size] = u32::MAX;
+    err_map[sample_size - 1][sample_size] = u32::MAX;
+    err_map[sample_size - 2][sample_size] = u32::MAX;
   }
 
   match downsample_path {
@@ -385,7 +263,7 @@ pub fn gen_err_map(
       // Coordinates of the current path step on the upsample
       let mut x = 1;
       let mut y = 1;
-      let mut last_move: Option<Move> = None;
+      let last_move: Option<Move> = None;
 
       for path_move in dp.iter() {
         match path_move.to_parent {
@@ -396,8 +274,8 @@ pub fn gen_err_map(
             // Set 3 boundary cells to "infinity",
             // unless we're by the left edge
             if x > 1 {
-              err_map[y][x - 2] = std::u32::MAX;
-              err_map[y - 1][x - 2] = std::u32::MAX;
+              err_map[y][x - 2] = u32::MAX;
+              err_map[y - 1][x - 2] = u32::MAX;
 
               // only set this one if we didn't move
               // right just before this, because if we did,
@@ -405,7 +283,7 @@ pub fn gen_err_map(
               // cell.
               match last_move {
                 Some(Move::Horizontal) => {
-                  err_map[y - 2][x - 2] = std::u32::MAX;
+                  err_map[y - 2][x - 2] = u32::MAX;
                 }
                 _ => {}
               };
@@ -424,8 +302,8 @@ pub fn gen_err_map(
             // Set 3 boundary cells to "infinity",
             // unless we're by the bottom edge
             if y > 1 {
-              err_map[y - 2][x] = std::u32::MAX;
-              err_map[y - 2][x - 1] = std::u32::MAX;
+              err_map[y - 2][x] = u32::MAX;
+              err_map[y - 2][x - 1] = u32::MAX;
 
               // only set this one if we didn't move
               // up just before this, because if we did,
@@ -433,7 +311,7 @@ pub fn gen_err_map(
               // cell.
               match last_move {
                 Some(Move::Vertical) => {
-                  err_map[y - 2][x - 2] = std::u32::MAX;
+                  err_map[y - 2][x - 2] = u32::MAX;
                 }
                 _ => {}
               };
@@ -451,10 +329,10 @@ pub fn gen_err_map(
             x += 2;
 
             // Set 4 boundary cells to "infinity"
-            err_map[y][x - 2] = std::u32::MAX;
-            err_map[y - 1][x - 3] = std::u32::MAX;
-            err_map[y - 2][x] = std::u32::MAX;
-            err_map[y - 3][x - 1] = std::u32::MAX;
+            err_map[y][x - 2] = u32::MAX;
+            err_map[y - 1][x - 3] = u32::MAX;
+            err_map[y - 2][x] = u32::MAX;
+            err_map[y - 3][x - 1] = u32::MAX;
 
             // Set 6 candidate blocks
             calc_err_cell(y - 2, x - 1, &sig_y, &sig_x, &mut err_map);
@@ -484,20 +362,21 @@ pub fn gen_err_map(
   err_map
 }
 
+#[inline]
 fn set_top_right_bounds(y: usize, x: usize, err_map: &mut [[u32; SIG_SIZE]; SIG_SIZE]) {
   // Set 5 boundary cells to the top and right
   if y < SIG_SIZE - 1 {
-    err_map[y + 1][x - 1] = std::u32::MAX;
-    err_map[y + 1][x] = std::u32::MAX;
+    err_map[y + 1][x - 1] = u32::MAX;
+    err_map[y + 1][x] = u32::MAX;
   }
 
   if y < SIG_SIZE - 1 && x < SIG_SIZE - 1 {
-    err_map[y + 1][x + 1] = std::u32::MAX;
+    err_map[y + 1][x + 1] = u32::MAX;
   }
 
   if x < SIG_SIZE - 1 {
-    err_map[y][x + 1] = std::u32::MAX;
-    err_map[y - 1][x + 1] = std::u32::MAX;
+    err_map[y][x + 1] = u32::MAX;
+    err_map[y - 1][x + 1] = u32::MAX;
   }
 }
 
@@ -511,20 +390,20 @@ pub fn calc_err_cell(
 ) {
   let err: u32 = (sig_y[y] as i16 - sig_x[x] as i16).abs() as u32;
   let left: u32 = match x == 0 {
-    true => std::u32::MAX,
+    true => u32::MAX,
     false => err_map[y][x - 1],
   };
   let down: u32 = match y == 0 {
-    true => std::u32::MAX,
+    true => u32::MAX,
     false => err_map[y - 1][x],
   };
   let down_left: u32 = match y == 0 || x == 0 {
-    true => std::u32::MAX,
+    true => u32::MAX,
     false => err_map[y - 1][x - 1],
   };
 
-  let mut min = std::cmp::min(left, std::cmp::min(down, down_left));
-  if min == std::u32::MAX {
+  let mut min = core::cmp::min(left, core::cmp::min(down, down_left));
+  if min == u32::MAX {
     min = 0;
   }
   err_map[y][x] = err + min;
