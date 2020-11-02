@@ -17,7 +17,14 @@ use fadtw::*;
 const STACK_SIZE: usize = 128 * 1024 * 1024;
 
 pub const SIG_SIZE: usize = 1024;
-pub const MAX_DOWNSAMPLES: usize = 10; // 2nd logarithm of SIG_SIZE
+
+pub fn downsample_fn(sig_y: &u8, sig_x: &u8) -> u8 {
+  sig_y / 2 + sig_x / 2
+}
+
+pub fn err_fn(sig_y: &u8, sig_x: &u8) -> u32 {
+  (*sig_y as i16 - *sig_x as i16).abs() as u32
+}
 
 fn main() {
   let child = thread::Builder::new()
@@ -34,7 +41,9 @@ fn run() {
 
   let start = SystemTime::now();
   for _ in 0..57600 {
-    fast_approx_dtw::<2049>(&sig_y, &sig_x);
+    let mut dtw_solver = DtwSolver::<u8, 2049>::new(&sig_y, &sig_x, downsample_fn, err_fn);
+    dtw_solver.solve();
+    //fast_approx_dtw::<u8, 2049>(&sig_y, &sig_x, downsample_fn, err_fn);
   }
   let elapsed = SystemTime::now().duration_since(start);
 
