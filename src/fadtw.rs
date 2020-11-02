@@ -1,3 +1,4 @@
+use crate::alloc::alloc;
 use crate::downsample::Downsample;
 use crate::path::*;
 use crate::SIG_SIZE;
@@ -45,9 +46,7 @@ pub fn map_paths<const MAX_PATH_LEN: usize>(
   sample_size: usize,
   downsample_path: &Option<Path<MAX_PATH_LEN>>,
 ) -> Path<MAX_PATH_LEN> {
-  let mut path_map: [[PathPoint; SIG_SIZE]; SIG_SIZE] =
-    unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-  //alloc!(false);
+  let mut path_map: [[PathPoint; SIG_SIZE]; SIG_SIZE] = alloc(false);
 
   match downsample_path {
     Some(dp) => {
@@ -231,9 +230,7 @@ pub fn gen_err_map<const MAX_PATH_LEN: usize>(
   downsample_path: &Option<Path<MAX_PATH_LEN>>,
 ) -> [[u32; SIG_SIZE]; SIG_SIZE] {
   // Allocate space for the error map
-  let mut err_map: [[u32; SIG_SIZE]; SIG_SIZE] =
-    unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-  //alloc!(false);
+  let mut err_map: [[u32; SIG_SIZE]; SIG_SIZE] = alloc(false);
 
   // If we're building a subsample map, then there are uninitialized
   // values to the top and right of the top-right cell. We need to set

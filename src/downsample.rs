@@ -1,3 +1,4 @@
+use crate::alloc::alloc;
 use crate::SIG_SIZE;
 use crate::{stack_vec::StackVec, MAX_DOWNSAMPLES};
 
@@ -14,7 +15,7 @@ impl Downsample {
     }
 
     let mut downsample = Downsample {
-      signal: unsafe { core::mem::MaybeUninit::uninit().assume_init() },
+      signal: alloc(false),
       len: len / 2,
     };
 
@@ -28,10 +29,6 @@ impl Downsample {
   #[inline]
   pub fn create_all(signal: &[u8; SIG_SIZE]) -> StackVec<Downsample, MAX_DOWNSAMPLES> {
     let mut downsamples = StackVec::<Downsample, MAX_DOWNSAMPLES>::empty(false);
-    /*
-    let mut downsamples: [Downsample; NUM_DOWNSAMPLES] =
-      unsafe { core::mem::MaybeUninit::uninit().assume_init() };
-      */
 
     let mut last_downsample = Downsample {
       signal: *signal,

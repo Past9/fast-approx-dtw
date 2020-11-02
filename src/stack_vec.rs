@@ -1,4 +1,4 @@
-use crate::alloc; //::alloc;
+use crate::alloc::alloc;
 
 pub struct StackVec<T, const N: usize> {
   items: [T; N],
@@ -8,7 +8,7 @@ impl<T, const N: usize> StackVec<T, N> {
   #[inline]
   pub fn empty(zero_mem: bool) -> StackVec<T, N> {
     StackVec {
-      items: unsafe { core::mem::MaybeUninit::uninit().assume_init() },
+      items: alloc(zero_mem),
       len: 0,
     }
   }

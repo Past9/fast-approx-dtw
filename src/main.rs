@@ -33,7 +33,7 @@ fn run() {
   let sig_x = rand_signal();
 
   let start = SystemTime::now();
-  for _ in 0..576 {
+  for _ in 0..57600 {
     fast_approx_dtw::<2049>(&sig_y, &sig_x);
   }
   let elapsed = SystemTime::now().duration_since(start);
