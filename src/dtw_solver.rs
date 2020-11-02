@@ -5,15 +5,15 @@ use crate::downsample::Downsample;
 use crate::path::*;
 
 const MAX_DOWNSAMPLES: usize = 16;
-const INFINITY: u32 = core::u32::MAX;
+const INFINITY: f32 = core::f32::MAX;
 
 pub struct DtwSolver<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize> {
   sig_y: &'a [SampleType; SIGNAL_SIZE],
   sig_x: &'a [SampleType; SIGNAL_SIZE],
   signal_size: usize,
   downsample_fn: fn(&SampleType, &SampleType) -> SampleType,
-  loss_fn: fn(&SampleType, &SampleType) -> u32,
-  loss_map: [[u32; SIGNAL_SIZE]; SIGNAL_SIZE],
+  loss_fn: fn(&SampleType, &SampleType) -> f32,
+  loss_map: [[f32; SIGNAL_SIZE]; SIGNAL_SIZE],
   path_map: [[PathPoint; SIGNAL_SIZE]; SIGNAL_SIZE],
   downsample_limit: Option<usize>,
 }
@@ -24,7 +24,7 @@ impl<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize>
     sig_y: &'a [SampleType; SIGNAL_SIZE],
     sig_x: &'a [SampleType; SIGNAL_SIZE],
     downsample_fn: fn(&SampleType, &SampleType) -> SampleType,
-    loss_fn: fn(&SampleType, &SampleType) -> u32,
+    loss_fn: fn(&SampleType, &SampleType) -> f32,
   ) -> DtwSolver<'a, SampleType, SIGNAL_SIZE, MAX_PATH_LEN> {
     DtwSolver {
       sig_y,
@@ -212,22 +212,22 @@ impl<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize>
   #[inline]
   pub fn calc_loss_cell(&mut self, y: usize, x: usize) {
     let loss = (self.loss_fn)(&self.sig_y[y], &self.sig_x[x]);
-    let left: u32 = match x == 0 {
+    let left = match x == 0 {
       true => INFINITY,
       false => self.loss_map[y][x - 1],
     };
-    let down: u32 = match y == 0 {
+    let down = match y == 0 {
       true => INFINITY,
       false => self.loss_map[y - 1][x],
     };
-    let down_left: u32 = match y == 0 || x == 0 {
+    let down_left = match y == 0 || x == 0 {
       true => INFINITY,
       false => self.loss_map[y - 1][x - 1],
     };
 
-    let mut min = cmp::min(left, cmp::min(down, down_left));
+    let mut min = libm::fminf(left, libm::fminf(down, down_left));
     if min == INFINITY {
-      min = 0;
+      min = 0f32;
     }
     self.loss_map[y][x] = loss + min;
   }
@@ -354,7 +354,7 @@ impl<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize>
       false => self.path_map[y + 1][x + 1].loss,
     };
 
-    let min_loss = cmp::min(vertical_loss, cmp::min(horizontal_loss, diag_loss));
+    let min_loss = libm::fminf(vertical_loss, libm::fminf(horizontal_loss, diag_loss));
 
     if diag_loss == min_loss {
       self.path_map[y][x] = PathPoint {

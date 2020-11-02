@@ -59,6 +59,6 @@ pub enum Move {
 
 #[derive(Debug, Copy, Clone)]
 pub struct PathPoint {
-  pub loss: u32,
+  pub loss: f32,
   pub to_parent: Move,
 }

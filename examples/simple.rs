@@ -4,11 +4,11 @@
 use fast_approx_dtw::{downsample_fns, loss_fns, DtwSolver};
 
 fn main() {
-  let sig_y = [1, 3, 1, 5];
-  let sig_x = [1, 1, 5, 1];
+  let sig_y = [1f32, 3f32, 1f32, 5f32];
+  let sig_x = [1f32, 1f32, 5f32, 1f32];
 
   let path =
-    DtwSolver::<u8, 4, 9>::new(&sig_y, &sig_x, downsample_fns::mean_u8, loss_fns::dist_u8).solve();
+    DtwSolver::<f32, 4, 9>::new(&sig_y, &sig_x, downsample_fns::mean_u8, loss_fns::dist).solve();
 
   for path_move in path.iter() {
     println!("{:?}", path_move);

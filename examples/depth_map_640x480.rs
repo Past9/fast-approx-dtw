@@ -28,11 +28,11 @@ fn run() {
 
   let start = SystemTime::now();
   for _ in 0..IMG_HEIGHT {
-    let path = DtwSolver::<[u8; 3], IMG_WIDTH, 1281>::new(
+    let path = DtwSolver::<[f32; 3], IMG_WIDTH, 1281>::new(
       &left_line,
       &right_line,
       downsample_fns::mean,
-      loss_fns::euclidean_u8::<3>,
+      loss_fns::euclidean::<3>,
     )
     .solve();
   }
@@ -44,9 +44,9 @@ fn run() {
   );
 }
 
-fn rand_line<const N: usize>() -> [[u8; 3]; N] {
+fn rand_line<const N: usize>() -> [[f32; 3]; N] {
   let mut rng = rand::thread_rng();
-  let mut sig = [[0u8; 3]; N];
+  let mut sig = [[0f32; 3]; N];
   for i in 0..N {
     sig[i] = [rng.gen(), rng.gen(), rng.gen()];
   }
