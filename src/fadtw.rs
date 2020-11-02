@@ -2,6 +2,9 @@ pub const SIG_SIZE: usize = 1024;
 pub const NUM_DOWNSAMPLES: usize = 10; // 2nd logarithm of SIG_SIZE
 pub const MAX_PATH_SIZE: usize = 2049; // SIG_SIZE * 2 + 1
 
+use crate::alloc::alloc;
+use crate::stack_vec::StackVec;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Move {
   Stop,
@@ -17,9 +20,13 @@ pub struct Downsample {
 }
 impl Downsample {
   #[inline]
-  pub fn create_one(signal: &[u8; SIG_SIZE], len: usize) -> Downsample {
+  pub fn create_one(signal: &[u8; SIG_SIZE], len: usize) -> Option<Downsample> {
+    if len % 2 != 0 {
+      return None;
+    }
+
     let mut downsample = Downsample {
-      signal: unsafe { std::mem::MaybeUninit::uninit().assume_init() }, // [0u8; SIG_SIZE],
+      signal: alloc(false),
       len: len / 2,
     };
 
@@ -27,19 +34,12 @@ impl Downsample {
       downsample.signal[t] = signal[t * 2] / 2 + signal[t * 2 + 1] / 2
     }
 
-    downsample
+    Some(downsample)
   }
 
   #[inline]
   pub fn create_all(signal: [u8; SIG_SIZE]) -> [Downsample; NUM_DOWNSAMPLES] {
-    let mut downsamples: [Downsample; NUM_DOWNSAMPLES] =
-      unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-    /*
-    [Downsample {
-      signal: [0u8; SIG_SIZE],
-      len: 0,
-    }; NUM_DOWNSAMPLES];
-    */
+    let mut downsamples: [Downsample; NUM_DOWNSAMPLES] = alloc(false);
 
     let mut last_downsample = Downsample {
       signal,
@@ -47,17 +47,28 @@ impl Downsample {
     };
 
     for i in 0..NUM_DOWNSAMPLES {
-      let downsample = Downsample::create_one(&last_downsample.signal, last_downsample.len);
-      downsamples[NUM_DOWNSAMPLES - i - 1] = last_downsample;
-      last_downsample = downsample;
+      match Downsample::create_one(&last_downsample.signal, last_downsample.len) {
+        Some(ds) => {
+          downsamples[NUM_DOWNSAMPLES - i - 1] = last_downsample;
+          last_downsample = ds;
+        }
+        None => {
+          break;
+        }
+      }
     }
 
     downsamples
   }
 }
 
-#[inline]
 pub fn solve_dtw(sig_y: [u8; SIG_SIZE], sig_x: [u8; SIG_SIZE]) -> Path {
+  let err_map = gen_err_map(sig_y, sig_x, SIG_SIZE, &None);
+  map_paths(&err_map, SIG_SIZE, &None)
+}
+
+#[inline]
+pub fn fast_approx_dtw(sig_y: [u8; SIG_SIZE], sig_x: [u8; SIG_SIZE]) -> Path {
   let downsamples_y = Downsample::create_all(sig_y);
   let downsamples_x = Downsample::create_all(sig_x);
 
@@ -106,9 +117,7 @@ impl Path {
     let mut y = 0;
     let mut x = 0;
     let mut len = 0;
-    let mut moves: [PathPoint; MAX_PATH_SIZE] =
-      unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-    //[PathPoint::empty(); MAX_PATH_SIZE];
+    let mut moves: [PathPoint; MAX_PATH_SIZE] = alloc(false);
     let mut current_cell = map[y][x];
 
     loop {
@@ -186,14 +195,7 @@ pub fn map_paths(
   sample_size: usize,
   downsample_path: &Option<Path>,
 ) -> Path {
-  let mut path_map: [[PathPoint; SIG_SIZE]; SIG_SIZE] =
-    unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-  /*
-  [[PathPoint {
-    error: 0,
-    to_parent: Move::Diagonal,
-  }; SIG_SIZE]; SIG_SIZE];
-  */
+  let mut path_map: [[PathPoint; SIG_SIZE]; SIG_SIZE] = alloc(false);
 
   match downsample_path {
     Some(dp) => {
@@ -353,9 +355,7 @@ pub fn gen_err_map(
   downsample_path: &Option<Path>,
 ) -> [[u32; SIG_SIZE]; SIG_SIZE] {
   // Allocate space for the error map
-  let mut err_map: [[u32; SIG_SIZE]; SIG_SIZE] =
-    unsafe { std::mem::MaybeUninit::uninit().assume_init() };
-  //[[0u32; SIG_SIZE]; SIG_SIZE];
+  let mut err_map: [[u32; SIG_SIZE]; SIG_SIZE] = alloc(false);
 
   // If we're building a subsample map, then there are uninitialized
   // values to the top and right of the top-right cell. We need to set

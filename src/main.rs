@@ -1,25 +1,17 @@
-use std::time::SystemTime;
+#![feature(min_const_generics)]
+
+mod alloc;
 mod fadtw;
+mod stack_vec;
+
 use rand;
 use rand::RngCore;
 use std::thread;
+use std::time::SystemTime;
 
 use fadtw::*;
 
 const STACK_SIZE: usize = 32 * 1024 * 1024;
-
-/*
-fn main() {
-  let sig_y: [u8; SIG_SIZE] = [1, 3, 1, 5, 4, 3, 7, 2];
-  let sig_x: [u8; SIG_SIZE] = [1, 1, 5, 1, 3, 8, 3, 2];
-
-  let path = solve_dtw(sig_y, sig_x);
-
-  for m in path.iter() {
-    println!("{:?}", m);
-  }
-}
-*/
 
 fn main() {
   let child = thread::Builder::new()
@@ -35,11 +27,7 @@ fn run() {
   let sig_y = rand_signal();
   let sig_x = rand_signal();
   for _ in 0..576 {
-    /*
-    let err_map = gen_err_map(sig_y, sig_x, SIG_SIZE, &None);
-    let path = map_paths(&err_map, SIG_SIZE, &None);
-    */
-    let path = solve_dtw(sig_y, sig_x);
+    let path = fast_approx_dtw(sig_y, sig_x);
   }
   let elapsed = SystemTime::now().duration_since(start);
 
