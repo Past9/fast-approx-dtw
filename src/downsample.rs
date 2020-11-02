@@ -1,5 +1,5 @@
-use crate::NUM_DOWNSAMPLES;
 use crate::SIG_SIZE;
+use crate::{stack_vec::StackVec, MAX_DOWNSAMPLES};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Downsample {
@@ -26,19 +26,22 @@ impl Downsample {
   }
 
   #[inline]
-  pub fn create_all(signal: &[u8; SIG_SIZE]) -> [Downsample; NUM_DOWNSAMPLES] {
+  pub fn create_all(signal: &[u8; SIG_SIZE]) -> StackVec<Downsample, MAX_DOWNSAMPLES> {
+    let mut downsamples = StackVec::<Downsample, MAX_DOWNSAMPLES>::empty(false);
+    /*
     let mut downsamples: [Downsample; NUM_DOWNSAMPLES] =
       unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+      */
 
     let mut last_downsample = Downsample {
       signal: *signal,
       len: SIG_SIZE,
     };
 
-    for i in 0..NUM_DOWNSAMPLES {
+    loop {
       match Downsample::create_one(&last_downsample.signal, last_downsample.len) {
         Some(ds) => {
-          downsamples[NUM_DOWNSAMPLES - i - 1] = last_downsample;
+          downsamples.push(last_downsample);
           last_downsample = ds;
         }
         None => {

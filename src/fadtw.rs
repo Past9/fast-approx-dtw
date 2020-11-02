@@ -1,6 +1,5 @@
 use crate::downsample::Downsample;
 use crate::path::*;
-use crate::NUM_DOWNSAMPLES;
 use crate::SIG_SIZE;
 
 #[inline]
@@ -22,16 +21,17 @@ pub fn fast_approx_dtw<const MAX_PATH_LEN: usize>(
 
   let mut last_downsample_path: Option<Path<MAX_PATH_LEN>> = None;
 
-  for ds in 0..NUM_DOWNSAMPLES {
+  for mi in 0..downsamples_y.len() {
+    let i = downsamples_y.len() - mi - 1;
     let err_map = gen_err_map(
-      &downsamples_y[ds].signal,
-      &downsamples_x[ds].signal,
-      downsamples_y[ds].len,
+      &downsamples_y[i].signal,
+      &downsamples_x[i].signal,
+      downsamples_y[i].len,
       &last_downsample_path,
     );
     last_downsample_path = Some(map_paths(
       &err_map,
-      downsamples_y[ds].len,
+      downsamples_y[i].len,
       &last_downsample_path,
     ));
   }
@@ -107,12 +107,12 @@ pub fn map_paths<const MAX_PATH_LEN: usize>(
     }
   };
 
-  get_best_path(path_map)
+  get_best_path(&path_map)
 }
 
 #[inline]
 pub fn get_best_path<const MAX_PATH_LEN: usize>(
-  path_map: [[PathPoint; SIG_SIZE]; SIG_SIZE],
+  path_map: &[[PathPoint; SIG_SIZE]; SIG_SIZE],
 ) -> Path<MAX_PATH_LEN> {
   let mut y = 0;
   let mut x = 0;

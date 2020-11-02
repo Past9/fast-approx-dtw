@@ -16,20 +16,16 @@ use fadtw::*;
 
 const STACK_SIZE: usize = 128 * 1024 * 1024;
 
-pub const SIG_SIZE: usize = 128;
-pub const NUM_DOWNSAMPLES: usize = 7; // 2nd logarithm of SIG_SIZE
+pub const SIG_SIZE: usize = 1024;
+pub const MAX_DOWNSAMPLES: usize = 10; // 2nd logarithm of SIG_SIZE
 
 fn main() {
-  /*
   let child = thread::Builder::new()
     .stack_size(STACK_SIZE)
     .spawn(run)
     .unwrap();
 
   child.join().unwrap();
-  */
-
-  run();
 }
 
 fn run() {
@@ -37,7 +33,7 @@ fn run() {
   let sig_x = rand_signal();
 
   let start = SystemTime::now();
-  for _ in 0..57600 {
+  for _ in 0..576 {
     fast_approx_dtw::<2049>(&sig_y, &sig_x);
   }
   let elapsed = SystemTime::now().duration_since(start);
