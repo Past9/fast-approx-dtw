@@ -14,11 +14,6 @@ impl<T, const N: usize> StackVec<T, N> {
   }
 
   #[inline]
-  pub fn new(items: [T; N], len: usize) -> StackVec<T, N> {
-    StackVec { items, len }
-  }
-
-  #[inline]
   pub fn push(&mut self, item: T) {
     if self.len >= N {
       panic!("failed to push: StackVec is full (capacity: {})", N);

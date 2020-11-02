@@ -1,34 +1,35 @@
 use crate::alloc::alloc;
 use crate::downsample::Downsample;
 use crate::path::*;
-use crate::SIG_SIZE;
 
 const MAX_DOWNSAMPLES: usize = 16;
 
-pub struct DtwSolver<'a, SampleType, const MaxPathLen: usize> {
-  sig_y: &'a [SampleType; SIG_SIZE],
-  sig_x: &'a [SampleType; SIG_SIZE],
+pub struct DtwSolver<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize> {
+  sig_y: &'a [SampleType; SIGNAL_SIZE],
+  sig_x: &'a [SampleType; SIGNAL_SIZE],
   signal_size: usize,
   downsample_fn: fn(&SampleType, &SampleType) -> SampleType,
-  err_fn: fn(&SampleType, &SampleType) -> u32,
-  err_map: [[u32; SIG_SIZE]; SIG_SIZE],
-  path_map: [[PathPoint; SIG_SIZE]; SIG_SIZE],
+  loss_fn: fn(&SampleType, &SampleType) -> u32,
+  loss_map: [[u32; SIGNAL_SIZE]; SIGNAL_SIZE],
+  path_map: [[PathPoint; SIGNAL_SIZE]; SIGNAL_SIZE],
   downsample_limit: Option<usize>,
 }
-impl<'a, SampleType, const MaxPathLen: usize> DtwSolver<'a, SampleType, MaxPathLen> {
+impl<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize>
+  DtwSolver<'a, SampleType, SIGNAL_SIZE, MAX_PATH_LEN>
+{
   pub fn new(
-    sig_y: &'a [SampleType; SIG_SIZE],
-    sig_x: &'a [SampleType; SIG_SIZE],
+    sig_y: &'a [SampleType; SIGNAL_SIZE],
+    sig_x: &'a [SampleType; SIGNAL_SIZE],
     downsample_fn: fn(&SampleType, &SampleType) -> SampleType,
-    err_fn: fn(&SampleType, &SampleType) -> u32,
-  ) -> DtwSolver<'a, SampleType, MaxPathLen> {
+    loss_fn: fn(&SampleType, &SampleType) -> u32,
+  ) -> DtwSolver<'a, SampleType, SIGNAL_SIZE, MAX_PATH_LEN> {
     DtwSolver {
       sig_y,
       sig_x,
-      signal_size: SIG_SIZE,
+      signal_size: SIGNAL_SIZE,
       downsample_fn,
-      err_fn,
-      err_map: alloc(false),
+      loss_fn,
+      loss_map: alloc(false),
       path_map: alloc(false),
       downsample_limit: None,
     }
@@ -43,25 +44,33 @@ impl<'a, SampleType, const MaxPathLen: usize> DtwSolver<'a, SampleType, MaxPathL
     self.signal_size = size;
   }
 
-  fn guided_solve(&mut self, downsample_path: &Option<Path<MaxPathLen>>) -> Path<MaxPathLen> {
-    self.gen_err_map(&downsample_path);
+  fn guided_solve(&mut self, downsample_path: &Option<Path<MAX_PATH_LEN>>) -> Path<MAX_PATH_LEN> {
+    self.map_losses(&downsample_path);
     self.map_paths(&downsample_path);
     self.get_best_path()
   }
 
   #[inline]
-  pub fn solve(&mut self) -> Path<MaxPathLen> {
-    let downsamples_y = Downsample::create_all::<MAX_DOWNSAMPLES>(self.sig_y, self.downsample_fn);
-    let downsamples_x = Downsample::create_all::<MAX_DOWNSAMPLES>(self.sig_x, self.downsample_fn);
+  pub fn solve(&mut self) -> Path<MAX_PATH_LEN> {
+    let downsamples_y = Downsample::create_all::<MAX_DOWNSAMPLES>(
+      self.sig_y,
+      self.downsample_fn,
+      self.downsample_limit,
+    );
+    let downsamples_x = Downsample::create_all::<MAX_DOWNSAMPLES>(
+      self.sig_x,
+      self.downsample_fn,
+      self.downsample_limit,
+    );
     let mut last_downsample_path = None;
 
     for mi in 0..downsamples_y.len() {
       let i = downsamples_y.len() - mi - 1;
-      let mut solver = DtwSolver::<SampleType, MaxPathLen>::new(
+      let mut solver = DtwSolver::<SampleType, SIGNAL_SIZE, MAX_PATH_LEN>::new(
         &downsamples_y[i].signal,
         &downsamples_x[i].signal,
         self.downsample_fn,
-        self.err_fn,
+        self.loss_fn,
       );
       solver.use_signal_size(downsamples_y[i].len);
       last_downsample_path = Some(solver.guided_solve(&last_downsample_path));
@@ -71,31 +80,31 @@ impl<'a, SampleType, const MaxPathLen: usize> DtwSolver<'a, SampleType, MaxPathL
   }
 
   #[inline]
-  pub fn gen_err_map(&mut self, downsample_path: &Option<Path<MaxPathLen>>) {
+  pub fn map_losses(&mut self, downsample_path: &Option<Path<MAX_PATH_LEN>>) {
     // If we're building a subsample map, then there are uninitialized
     // values to the top and right of the top-right cell. We need to set
     // them to infinity so they don't mess up our min calculations later.
-    if self.signal_size < SIG_SIZE {
-      self.err_map[self.signal_size][self.signal_size - 2] = u32::MAX;
-      self.err_map[self.signal_size][self.signal_size - 1] = u32::MAX;
-      self.err_map[self.signal_size][self.signal_size] = u32::MAX;
-      self.err_map[self.signal_size - 1][self.signal_size] = u32::MAX;
-      self.err_map[self.signal_size - 2][self.signal_size] = u32::MAX;
+    if self.signal_size < SIGNAL_SIZE {
+      self.loss_map[self.signal_size][self.signal_size - 2] = u32::MAX;
+      self.loss_map[self.signal_size][self.signal_size - 1] = u32::MAX;
+      self.loss_map[self.signal_size][self.signal_size] = u32::MAX;
+      self.loss_map[self.signal_size - 1][self.signal_size] = u32::MAX;
+      self.loss_map[self.signal_size - 2][self.signal_size] = u32::MAX;
     }
 
     match downsample_path {
       Some(ref dp) => {
-        // We always have to calculate errors for the 4 cells near the
+        // We always have to calculate losses for the 4 cells near the
         // origin
-        self.calc_err_cell(0, 0); // Corner
-        self.calc_err_cell(0, 1); // Top
-        self.calc_err_cell(1, 0); // Right
-        self.calc_err_cell(1, 1); // Top-right
+        self.calc_loss_cell(0, 0); // Corner
+        self.calc_loss_cell(0, 1); // Top
+        self.calc_loss_cell(1, 0); // Right
+        self.calc_loss_cell(1, 1); // Top-right
         self.set_top_right_bounds(1, 1);
 
         // Now follow the downsample path through the map
         // (from the beginning of the signals), only
-        // calculating error values for adjacent cells.
+        // calculating loss values for adjacent cells.
 
         // Coordinates of the current path step on the upsample
         let mut x = 1;
@@ -111,8 +120,8 @@ impl<'a, SampleType, const MaxPathLen: usize> DtwSolver<'a, SampleType, MaxPathL
               // Set 3 boundary cells to "infinity",
               // unless we're by the left edge
               if x > 1 {
-                self.err_map[y][x - 2] = u32::MAX;
-                self.err_map[y - 1][x - 2] = u32::MAX;
+                self.loss_map[y][x - 2] = u32::MAX;
+                self.loss_map[y - 1][x - 2] = u32::MAX;
 
                 // only set this one if we didn't move
                 // right just before this, because if we did,
@@ -120,17 +129,17 @@ impl<'a, SampleType, const MaxPathLen: usize> DtwSolver<'a, SampleType, MaxPathL
                 // cell.
                 match last_move {
                   Some(Move::Horizontal) => {
-                    self.err_map[y - 2][x - 2] = u32::MAX;
+                    self.loss_map[y - 2][x - 2] = u32::MAX;
                   }
                   _ => {}
                 };
               }
 
               // Set 4 candidate blocks
-              self.calc_err_cell(y - 1, x - 1);
-              self.calc_err_cell(y - 1, x);
-              self.calc_err_cell(y, x - 1);
-              self.calc_err_cell(y, x);
+              self.calc_loss_cell(y - 1, x - 1);
+              self.calc_loss_cell(y - 1, x);
+              self.calc_loss_cell(y, x - 1);
+              self.calc_loss_cell(y, x);
             }
             Move::Horizontal => {
               // Going right
@@ -139,8 +148,8 @@ impl<'a, SampleType, const MaxPathLen: usize> DtwSolver<'a, SampleType, MaxPathL
               // Set 3 boundary cells to "infinity",
               // unless we're by the bottom edge
               if y > 1 {
-                self.err_map[y - 2][x] = u32::MAX;
-                self.err_map[y - 2][x - 1] = u32::MAX;
+                self.loss_map[y - 2][x] = u32::MAX;
+                self.loss_map[y - 2][x - 1] = u32::MAX;
 
                 // only set this one if we didn't move
                 // up just before this, because if we did,
@@ -148,17 +157,17 @@ impl<'a, SampleType, const MaxPathLen: usize> DtwSolver<'a, SampleType, MaxPathL
                 // cell.
                 match last_move {
                   Some(Move::Vertical) => {
-                    self.err_map[y - 2][x - 2] = u32::MAX;
+                    self.loss_map[y - 2][x - 2] = u32::MAX;
                   }
                   _ => {}
                 };
               }
 
               // Set 4 candidate blocks
-              self.calc_err_cell(y - 1, x - 1);
-              self.calc_err_cell(y - 1, x);
-              self.calc_err_cell(y, x - 1);
-              self.calc_err_cell(y, x);
+              self.calc_loss_cell(y - 1, x - 1);
+              self.calc_loss_cell(y - 1, x);
+              self.calc_loss_cell(y, x - 1);
+              self.calc_loss_cell(y, x);
             }
             Move::Diagonal => {
               // Going up and right
@@ -166,18 +175,18 @@ impl<'a, SampleType, const MaxPathLen: usize> DtwSolver<'a, SampleType, MaxPathL
               x += 2;
 
               // Set 4 boundary cells to "infinity"
-              self.err_map[y][x - 2] = u32::MAX;
-              self.err_map[y - 1][x - 3] = u32::MAX;
-              self.err_map[y - 2][x] = u32::MAX;
-              self.err_map[y - 3][x - 1] = u32::MAX;
+              self.loss_map[y][x - 2] = u32::MAX;
+              self.loss_map[y - 1][x - 3] = u32::MAX;
+              self.loss_map[y - 2][x] = u32::MAX;
+              self.loss_map[y - 3][x - 1] = u32::MAX;
 
               // Set 6 candidate blocks
-              self.calc_err_cell(y - 2, x - 1);
-              self.calc_err_cell(y - 1, x - 2);
-              self.calc_err_cell(y - 1, x - 1);
-              self.calc_err_cell(y - 1, x);
-              self.calc_err_cell(y, x - 1);
-              self.calc_err_cell(y, x);
+              self.calc_loss_cell(y - 2, x - 1);
+              self.calc_loss_cell(y - 1, x - 2);
+              self.calc_loss_cell(y - 1, x - 1);
+              self.calc_loss_cell(y - 1, x);
+              self.calc_loss_cell(y, x - 1);
+              self.calc_loss_cell(y, x);
             }
             Move::Stop => panic!("Invalid move"), // This variant doesn't apply here
           };
@@ -187,10 +196,10 @@ impl<'a, SampleType, const MaxPathLen: usize> DtwSolver<'a, SampleType, MaxPathL
       }
       None => {
         // If we weren't given a downsample path, we fill out the
-        // error map completely.
+        // loss map completely.
         for y in 0..self.signal_size {
           for x in 0..self.signal_size {
-            self.calc_err_cell(y, x);
+            self.calc_loss_cell(y, x);
           }
         }
       }
@@ -198,50 +207,48 @@ impl<'a, SampleType, const MaxPathLen: usize> DtwSolver<'a, SampleType, MaxPathL
   }
 
   #[inline]
-  pub fn calc_err_cell(&mut self, y: usize, x: usize) {
-    let err = (self.err_fn)(&self.sig_y[y], &self.sig_x[x]);
+  pub fn calc_loss_cell(&mut self, y: usize, x: usize) {
+    let loss = (self.loss_fn)(&self.sig_y[y], &self.sig_x[x]);
     let left: u32 = match x == 0 {
       true => u32::MAX,
-      false => self.err_map[y][x - 1],
+      false => self.loss_map[y][x - 1],
     };
     let down: u32 = match y == 0 {
       true => u32::MAX,
-      false => self.err_map[y - 1][x],
+      false => self.loss_map[y - 1][x],
     };
     let down_left: u32 = match y == 0 || x == 0 {
       true => u32::MAX,
-      false => self.err_map[y - 1][x - 1],
+      false => self.loss_map[y - 1][x - 1],
     };
 
     let mut min = core::cmp::min(left, core::cmp::min(down, down_left));
     if min == u32::MAX {
       min = 0;
     }
-    self.err_map[y][x] = err + min;
+    self.loss_map[y][x] = loss + min;
   }
 
   #[inline]
   fn set_top_right_bounds(&mut self, y: usize, x: usize) {
     // Set 5 boundary cells to the top and right
-    if y < SIG_SIZE - 1 {
-      self.err_map[y + 1][x - 1] = u32::MAX;
-      self.err_map[y + 1][x] = u32::MAX;
+    if y < SIGNAL_SIZE - 1 {
+      self.loss_map[y + 1][x - 1] = u32::MAX;
+      self.loss_map[y + 1][x] = u32::MAX;
     }
 
-    if y < SIG_SIZE - 1 && x < SIG_SIZE - 1 {
-      self.err_map[y + 1][x + 1] = u32::MAX;
+    if y < SIGNAL_SIZE - 1 && x < SIGNAL_SIZE - 1 {
+      self.loss_map[y + 1][x + 1] = u32::MAX;
     }
 
-    if x < SIG_SIZE - 1 {
-      self.err_map[y][x + 1] = u32::MAX;
-      self.err_map[y - 1][x + 1] = u32::MAX;
+    if x < SIGNAL_SIZE - 1 {
+      self.loss_map[y][x + 1] = u32::MAX;
+      self.loss_map[y - 1][x + 1] = u32::MAX;
     }
   }
 
   #[inline]
-  pub fn map_paths(&mut self, downsample_path: &Option<Path<MaxPathLen>>) -> Path<MaxPathLen> {
-    let mut path_map: [[PathPoint; SIG_SIZE]; SIG_SIZE] = alloc(false);
-
+  pub fn map_paths(&mut self, downsample_path: &Option<Path<MAX_PATH_LEN>>) -> Path<MAX_PATH_LEN> {
     match downsample_path {
       Some(dp) => {
         // If we have a downsample path, then we only calculate possible paths through
@@ -307,7 +314,7 @@ impl<'a, SampleType, const MaxPathLen: usize> DtwSolver<'a, SampleType, MaxPathL
   pub fn calc_path_cell(&mut self, y: usize, x: usize) {
     if y == self.signal_size - 1 && x == self.signal_size - 1 {
       self.path_map[y][x] = PathPoint {
-        error: self.err_map[y][x],
+        loss: self.loss_map[y][x],
         to_parent: Move::Stop,
       };
       return;
@@ -315,7 +322,7 @@ impl<'a, SampleType, const MaxPathLen: usize> DtwSolver<'a, SampleType, MaxPathL
 
     if y == self.signal_size - 1 {
       self.path_map[y][x] = PathPoint {
-        error: self.err_map[y][x] + self.path_map[y][x + 1].error,
+        loss: self.loss_map[y][x] + self.path_map[y][x + 1].loss,
         to_parent: Move::Horizontal,
       };
       return;
@@ -323,48 +330,48 @@ impl<'a, SampleType, const MaxPathLen: usize> DtwSolver<'a, SampleType, MaxPathL
 
     if x == self.signal_size - 1 {
       self.path_map[y][x] = PathPoint {
-        error: self.err_map[y][x] + self.path_map[y + 1][x].error,
+        loss: self.loss_map[y][x] + self.path_map[y + 1][x].loss,
         to_parent: Move::Vertical,
       };
       return;
     }
 
-    let top_err = match self.err_map[y + 1][x] == u32::MAX {
+    let vertical_loss = match self.loss_map[y + 1][x] == u32::MAX {
       true => u32::MAX,
-      false => self.path_map[y + 1][x].error,
+      false => self.path_map[y + 1][x].loss,
     };
 
-    let right_err = match self.err_map[y][x + 1] == u32::MAX {
+    let horizontal_loss = match self.loss_map[y][x + 1] == u32::MAX {
       true => u32::MAX,
-      false => self.path_map[y][x + 1].error,
+      false => self.path_map[y][x + 1].loss,
     };
 
-    let diag_err = match self.err_map[y + 1][x + 1] == u32::MAX {
+    let diag_loss = match self.loss_map[y + 1][x + 1] == u32::MAX {
       true => u32::MAX,
-      false => self.path_map[y + 1][x + 1].error,
+      false => self.path_map[y + 1][x + 1].loss,
     };
 
-    let min_err = core::cmp::min(top_err, core::cmp::min(right_err, diag_err));
+    let min_loss = core::cmp::min(vertical_loss, core::cmp::min(horizontal_loss, diag_loss));
 
-    if diag_err == min_err {
+    if diag_loss == min_loss {
       self.path_map[y][x] = PathPoint {
-        error: self.err_map[y][x] + diag_err,
+        loss: self.loss_map[y][x] + diag_loss,
         to_parent: Move::Diagonal,
       };
       return;
     }
 
-    if top_err == min_err {
+    if vertical_loss == min_loss {
       self.path_map[y][x] = PathPoint {
-        error: self.err_map[y][x] + top_err,
+        loss: self.loss_map[y][x] + vertical_loss,
         to_parent: Move::Vertical,
       };
       return;
     }
 
-    if right_err == min_err {
+    if horizontal_loss == min_loss {
       self.path_map[y][x] = PathPoint {
-        error: self.err_map[y][x] + right_err,
+        loss: self.loss_map[y][x] + horizontal_loss,
         to_parent: Move::Horizontal,
       };
       return;
@@ -372,7 +379,7 @@ impl<'a, SampleType, const MaxPathLen: usize> DtwSolver<'a, SampleType, MaxPathL
   }
 
   #[inline]
-  pub fn get_best_path(&self) -> Path<MaxPathLen> {
+  pub fn get_best_path(&self) -> Path<MAX_PATH_LEN> {
     let mut y = 0;
     let mut x = 0;
     let mut current_cell = self.path_map[y][x];
@@ -406,37 +413,3 @@ impl<'a, SampleType, const MaxPathLen: usize> DtwSolver<'a, SampleType, MaxPathL
     path
   }
 }
-
-/*
-#[inline]
-pub fn fast_approx_dtw<SampleType: Clone, const MaxPathLen: usize>(
-  sig_y: &[SampleType; SIG_SIZE],
-  sig_x: &[SampleType; SIG_SIZE],
-  downsample_fn: fn(&SampleType, &SampleType) -> SampleType,
-  err_fn: fn(&SampleType, &SampleType) -> u32,
-) -> Path<MaxPathLen> {
-  let downsamples_y = Downsample::create_all::<MAX_DOWNSAMPLES>(sig_y.clone(), downsample_fn);
-  let downsamples_x = Downsample::create_all::<MAX_DOWNSAMPLES>(sig_x.clone(), downsample_fn);
-
-  let mut last_downsample_path: Option<Path<MaxPathLen>> = None;
-
-  for mi in 0..downsamples_y.len() {
-    let i = downsamples_y.len() - mi - 1;
-    let err_map = gen_err_map(
-      &downsamples_y[i].signal,
-      &downsamples_x[i].signal,
-      downsamples_y[i].len,
-      &last_downsample_path,
-      err_fn,
-    );
-    last_downsample_path = Some(map_paths(
-      &err_map,
-      downsamples_y[i].len,
-      &last_downsample_path,
-    ));
-  }
-
-  last_downsample_path.unwrap()
-}
-
-*/
