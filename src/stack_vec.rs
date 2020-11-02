@@ -1,5 +1,6 @@
 use crate::alloc::alloc;
 
+#[derive(Debug)]
 pub struct StackVec<T, const N: usize> {
   items: [T; N],
   len: usize,

@@ -10,7 +10,7 @@ pub enum Move {
   Diagonal,
 }
 
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct PathPoint {
   pub loss: u32,
   pub to_parent: Move,

@@ -1,8 +1,11 @@
+use core::cmp;
+
 use crate::alloc::alloc;
 use crate::downsample::Downsample;
 use crate::path::*;
 
 const MAX_DOWNSAMPLES: usize = 16;
+const INFINITY: u32 = core::u32::MAX;
 
 pub struct DtwSolver<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize> {
   sig_y: &'a [SampleType; SIGNAL_SIZE],
@@ -85,11 +88,11 @@ impl<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize>
     // values to the top and right of the top-right cell. We need to set
     // them to infinity so they don't mess up our min calculations later.
     if self.signal_size < SIGNAL_SIZE {
-      self.loss_map[self.signal_size][self.signal_size - 2] = u32::MAX;
-      self.loss_map[self.signal_size][self.signal_size - 1] = u32::MAX;
-      self.loss_map[self.signal_size][self.signal_size] = u32::MAX;
-      self.loss_map[self.signal_size - 1][self.signal_size] = u32::MAX;
-      self.loss_map[self.signal_size - 2][self.signal_size] = u32::MAX;
+      self.loss_map[self.signal_size][self.signal_size - 2] = INFINITY;
+      self.loss_map[self.signal_size][self.signal_size - 1] = INFINITY;
+      self.loss_map[self.signal_size][self.signal_size] = INFINITY;
+      self.loss_map[self.signal_size - 1][self.signal_size] = INFINITY;
+      self.loss_map[self.signal_size - 2][self.signal_size] = INFINITY;
     }
 
     match downsample_path {
@@ -120,8 +123,8 @@ impl<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize>
               // Set 3 boundary cells to "infinity",
               // unless we're by the left edge
               if x > 1 {
-                self.loss_map[y][x - 2] = u32::MAX;
-                self.loss_map[y - 1][x - 2] = u32::MAX;
+                self.loss_map[y][x - 2] = INFINITY;
+                self.loss_map[y - 1][x - 2] = INFINITY;
 
                 // only set this one if we didn't move
                 // right just before this, because if we did,
@@ -129,7 +132,7 @@ impl<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize>
                 // cell.
                 match last_move {
                   Some(Move::Horizontal) => {
-                    self.loss_map[y - 2][x - 2] = u32::MAX;
+                    self.loss_map[y - 2][x - 2] = INFINITY;
                   }
                   _ => {}
                 };
@@ -148,8 +151,8 @@ impl<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize>
               // Set 3 boundary cells to "infinity",
               // unless we're by the bottom edge
               if y > 1 {
-                self.loss_map[y - 2][x] = u32::MAX;
-                self.loss_map[y - 2][x - 1] = u32::MAX;
+                self.loss_map[y - 2][x] = INFINITY;
+                self.loss_map[y - 2][x - 1] = INFINITY;
 
                 // only set this one if we didn't move
                 // up just before this, because if we did,
@@ -157,7 +160,7 @@ impl<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize>
                 // cell.
                 match last_move {
                   Some(Move::Vertical) => {
-                    self.loss_map[y - 2][x - 2] = u32::MAX;
+                    self.loss_map[y - 2][x - 2] = INFINITY;
                   }
                   _ => {}
                 };
@@ -175,10 +178,10 @@ impl<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize>
               x += 2;
 
               // Set 4 boundary cells to "infinity"
-              self.loss_map[y][x - 2] = u32::MAX;
-              self.loss_map[y - 1][x - 3] = u32::MAX;
-              self.loss_map[y - 2][x] = u32::MAX;
-              self.loss_map[y - 3][x - 1] = u32::MAX;
+              self.loss_map[y][x - 2] = INFINITY;
+              self.loss_map[y - 1][x - 3] = INFINITY;
+              self.loss_map[y - 2][x] = INFINITY;
+              self.loss_map[y - 3][x - 1] = INFINITY;
 
               // Set 6 candidate blocks
               self.calc_loss_cell(y - 2, x - 1);
@@ -210,20 +213,20 @@ impl<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize>
   pub fn calc_loss_cell(&mut self, y: usize, x: usize) {
     let loss = (self.loss_fn)(&self.sig_y[y], &self.sig_x[x]);
     let left: u32 = match x == 0 {
-      true => u32::MAX,
+      true => INFINITY,
       false => self.loss_map[y][x - 1],
     };
     let down: u32 = match y == 0 {
-      true => u32::MAX,
+      true => INFINITY,
       false => self.loss_map[y - 1][x],
     };
     let down_left: u32 = match y == 0 || x == 0 {
-      true => u32::MAX,
+      true => INFINITY,
       false => self.loss_map[y - 1][x - 1],
     };
 
-    let mut min = core::cmp::min(left, core::cmp::min(down, down_left));
-    if min == u32::MAX {
+    let mut min = cmp::min(left, cmp::min(down, down_left));
+    if min == INFINITY {
       min = 0;
     }
     self.loss_map[y][x] = loss + min;
@@ -233,17 +236,17 @@ impl<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize>
   fn set_top_right_bounds(&mut self, y: usize, x: usize) {
     // Set 5 boundary cells to the top and right
     if y < SIGNAL_SIZE - 1 {
-      self.loss_map[y + 1][x - 1] = u32::MAX;
-      self.loss_map[y + 1][x] = u32::MAX;
+      self.loss_map[y + 1][x - 1] = INFINITY;
+      self.loss_map[y + 1][x] = INFINITY;
     }
 
     if y < SIGNAL_SIZE - 1 && x < SIGNAL_SIZE - 1 {
-      self.loss_map[y + 1][x + 1] = u32::MAX;
+      self.loss_map[y + 1][x + 1] = INFINITY;
     }
 
     if x < SIGNAL_SIZE - 1 {
-      self.loss_map[y][x + 1] = u32::MAX;
-      self.loss_map[y - 1][x + 1] = u32::MAX;
+      self.loss_map[y][x + 1] = INFINITY;
+      self.loss_map[y - 1][x + 1] = INFINITY;
     }
   }
 
@@ -336,22 +339,22 @@ impl<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize>
       return;
     }
 
-    let vertical_loss = match self.loss_map[y + 1][x] == u32::MAX {
-      true => u32::MAX,
+    let vertical_loss = match self.loss_map[y + 1][x] == INFINITY {
+      true => INFINITY,
       false => self.path_map[y + 1][x].loss,
     };
 
-    let horizontal_loss = match self.loss_map[y][x + 1] == u32::MAX {
-      true => u32::MAX,
+    let horizontal_loss = match self.loss_map[y][x + 1] == INFINITY {
+      true => INFINITY,
       false => self.path_map[y][x + 1].loss,
     };
 
-    let diag_loss = match self.loss_map[y + 1][x + 1] == u32::MAX {
-      true => u32::MAX,
+    let diag_loss = match self.loss_map[y + 1][x + 1] == INFINITY {
+      true => INFINITY,
       false => self.path_map[y + 1][x + 1].loss,
     };
 
-    let min_loss = core::cmp::min(vertical_loss, core::cmp::min(horizontal_loss, diag_loss));
+    let min_loss = cmp::min(vertical_loss, cmp::min(horizontal_loss, diag_loss));
 
     if diag_loss == min_loss {
       self.path_map[y][x] = PathPoint {
