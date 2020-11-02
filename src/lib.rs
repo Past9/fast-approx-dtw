@@ -4,10 +4,12 @@
 mod alloc;
 mod downsample;
 mod dtw_solver;
-mod path;
-mod stack_vec;
 
 pub mod downsample_fns;
 pub mod loss_fns;
+pub mod path;
+pub mod stack_vec;
 
 pub use dtw_solver::DtwSolver;
+pub use path::{Move, Path, PathPoint};
+pub use stack_vec::{StackVec, StackVecIterator};

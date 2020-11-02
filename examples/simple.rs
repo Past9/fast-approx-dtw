@@ -3,7 +3,7 @@
 */
 use fast_approx_dtw::{downsample_fns, loss_fns, DtwSolver};
 
-pub fn main() {
+fn main() {
   let sig_y = [1, 3, 1, 5];
   let sig_x = [1, 1, 5, 1];
 
