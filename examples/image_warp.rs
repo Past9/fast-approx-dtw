@@ -33,7 +33,7 @@ fn run() {
       downsample_fns::mean,
       loss_fns::euclidean::<3>,
     )
-    .limit_downsamples(0)
+    //.limit_downsamples(0)
     .solve();
 
     warped_img[y] = path.warp(left_img[y]);

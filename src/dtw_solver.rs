@@ -47,6 +47,7 @@ impl<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize>
     self.signal_size = size;
   }
 
+  #[inline]
   fn guided_solve(&mut self, downsample_path: &Option<Path<MAX_PATH_LEN>>) -> Path<MAX_PATH_LEN> {
     self.map_losses(&downsample_path);
     self.map_paths(&downsample_path);
@@ -351,7 +352,7 @@ impl<'a, SampleType, const SIGNAL_SIZE: usize, const MAX_PATH_LEN: usize>
 
     let diag_loss = match self.loss_map[y + 1][x + 1] == INFINITY {
       true => INFINITY,
-      false => self.path_map[y + 1][x + 1].loss,
+      false => self.path_map[y + 1][x + 1].loss * 1.4142135,
     };
 
     let min_loss = libm::fminf(vertical_loss, libm::fminf(horizontal_loss, diag_loss));
