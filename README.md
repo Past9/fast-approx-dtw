@@ -6,4 +6,4 @@ Basic DTW implementations have quadratic time complexity due to the need to calc
 
 There are situations where a downsampled signal can generate a path that's wildly different from the most correct path on the upsampled signal. In that case, this implementation will not generate the most optimal path, hence the "approximate" in `fast-approx-dtw`. This appears to only be an issue if the input signals are vastly different from each other. This library's main goal is to eventually be useful for generating depth maps between stereo images in real time on embedded devices. Since these images should be very similar to each other, this isn't expected to be an issue. 
 
-* Based on [FastDTW: Toward Accurate Dynamic Time Warping in Linear Time and Space](https://www.semanticscholar.org/paper/FastDTW%3A-Toward-Accurate-Dynamic-Time-Warping-in-Salvador-Chan/05a20cde15e172fc82f32774dd0cf4fe5827cad2)
+\* Based on [FastDTW: Toward Accurate Dynamic Time Warping in Linear Time and Space](https://www.semanticscholar.org/paper/FastDTW%3A-Toward-Accurate-Dynamic-Time-Warping-in-Salvador-Chan/05a20cde15e172fc82f32774dd0cf4fe5827cad2)
