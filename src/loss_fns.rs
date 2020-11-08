@@ -9,7 +9,7 @@ pub fn dist(y: &f32, x: &f32) -> f32 {
 pub fn euclidean<const N: usize>(y: &[f32; N], x: &[f32; N]) -> f32 {
   let mut accum: f32 = 0f32;
   for i in 0..N {
-    accum += dist(&y[i], &x[i]);
+    accum += libm::powf(dist(&y[i], &x[i]), 2f32);
   }
   sqrtf(accum as f32)
 }

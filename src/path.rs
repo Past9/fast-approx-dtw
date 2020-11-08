@@ -47,6 +47,33 @@ impl<const N: usize> Path<N> {
 
     warped
   }
+
+  pub fn get_disparity<const SIGNAL_SIZE: usize>(&self) -> [f32; SIGNAL_SIZE] {
+    let mut deviation: [f32; SIGNAL_SIZE] = alloc(false);
+
+    let mut d = 0f32;
+    let mut t = 0;
+    for point in self.iter() {
+      match point.to_parent {
+        Move::Diagonal => {
+          t += 1;
+        }
+        Move::Horizontal => {
+          t += 1;
+          d -= 1f32;
+        }
+        Move::Vertical => {
+          d += 1f32;
+        }
+        _ => {
+          break;
+        }
+      }
+      deviation[t] = d;
+    }
+
+    deviation
+  }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

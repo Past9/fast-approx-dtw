@@ -1,14 +1,14 @@
 #![feature(min_const_generics)]
 
-use fast_approx_dtw::{downsample_fns, loss_fns, stack_vec::StackVec, DtwSolver, Path};
+use fast_approx_dtw::{downsample_fns, loss_fns, DtwSolver};
 use image::GenericImageView;
 use std::thread;
 use std::time::SystemTime;
 
 const STACK_SIZE: usize = 128 * 1024 * 1024;
-const IMG_HEIGHT: usize = 1046;
-const IMG_WIDTH: usize = 1024;
-const MAX_PATH_SIZE: usize = 2049;
+const IMG_HEIGHT: usize = 512;
+const IMG_WIDTH: usize = 512;
+const MAX_PATH_SIZE: usize = 1025;
 
 fn main() {
   thread::Builder::new()
@@ -20,10 +20,10 @@ fn main() {
 }
 
 fn run() {
-  let left_img = load_image::<IMG_HEIGHT, IMG_WIDTH>("./examples/left-lion.bmp");
-  let right_img = load_image::<IMG_HEIGHT, IMG_WIDTH>("./examples/right-lion.bmp");
+  let left_img = load_image::<IMG_HEIGHT, IMG_WIDTH>("./examples/pentagon-left.gif");
+  let right_img = load_image::<IMG_HEIGHT, IMG_WIDTH>("./examples/pentagon-right.gif");
   let mut warped_img = [[[0f32; 3]; IMG_WIDTH]; IMG_HEIGHT];
-  let mut composite_img = [[[0f32; 3]; IMG_WIDTH]; IMG_HEIGHT];
+  let mut depth_img = [[0f32; IMG_WIDTH]; IMG_HEIGHT];
 
   let start = SystemTime::now();
   for y in 0..IMG_HEIGHT {
@@ -33,18 +33,31 @@ fn run() {
       downsample_fns::mean,
       loss_fns::euclidean::<3>,
     )
-    //.limit_downsamples(0)
+    .limit_downsamples(0)
     .solve();
 
     warped_img[y] = path.warp(left_img[y]);
+    depth_img[y] = path.get_disparity();
   }
   println!(
     "Calculated paths in {:?} μs",
     SystemTime::now().duration_since(start).unwrap().as_nanos() as f32 / 1000.0
   );
 
-  save_image::<IMG_HEIGHT, IMG_WIDTH>("./examples/warped-lion.bmp", warped_img);
-  save_image::<IMG_HEIGHT, IMG_WIDTH>("./examples/composite-lion.bmp", composite_img);
+  save_rgb_image::<IMG_HEIGHT, IMG_WIDTH>("./examples/output/pentagon-warped.bmp", warped_img);
+  save_gray_image::<IMG_HEIGHT, IMG_WIDTH>("./examples/output/pentagon-depth.bmp", depth_img);
+}
+
+fn derive_signal<const N: usize>(sig: &[[f32; 3]; N]) -> [[f32; 3]; N] {
+  let mut derivative = [[0f32; 3]; N];
+
+  for t in 0..N - 1 {
+    derivative[t][0] = sig[t + 1][0] - sig[t][0];
+    derivative[t][1] = sig[t + 1][1] - sig[t][1];
+    derivative[t][2] = sig[t + 1][2] - sig[t][2];
+  }
+
+  derivative
 }
 
 fn load_image<const H: usize, const W: usize>(filepath: &'static str) -> [[[f32; 3]; W]; H] {
@@ -72,7 +85,31 @@ fn load_image<const H: usize, const W: usize>(filepath: &'static str) -> [[[f32;
   img
 }
 
-fn save_image<const H: usize, const W: usize>(filepath: &'static str, img: [[[f32; 3]; W]; H]) {
+fn save_gray_image<const H: usize, const W: usize>(filepath: &'static str, img: [[f32; W]; H]) {
+  let mut rgb_img = [[[0f32; 3]; W]; H];
+
+  let mut max = 0f32;
+  for y in 0..H {
+    for x in 0..W {
+      if img[y][x] > max {
+        max = img[y][x];
+      }
+    }
+  }
+
+  for y in 0..H {
+    for x in 0..W {
+      let pix = img[y][x] / max;
+      rgb_img[y][x][0] = pix;
+      rgb_img[y][x][1] = pix;
+      rgb_img[y][x][2] = pix;
+    }
+  }
+
+  save_rgb_image(filepath, rgb_img);
+}
+
+fn save_rgb_image<const H: usize, const W: usize>(filepath: &'static str, img: [[[f32; 3]; W]; H]) {
   let mut img_buf = image::ImageBuffer::new(W as u32, H as u32);
 
   for (img_x, img_y, pixel) in img_buf.enumerate_pixels_mut() {
@@ -85,7 +122,7 @@ fn save_image<const H: usize, const W: usize>(filepath: &'static str, img: [[[f3
     ]);
   }
 
-  img_buf.save(filepath);
+  img_buf.save(filepath).unwrap();
 
   println!("Saved image to {}", filepath);
 }
