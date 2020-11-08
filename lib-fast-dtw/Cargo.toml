@@ -1,5 +1,5 @@
 [package]
-name = "fast-approx-dtw"
+name = "fast-dtw"
 version = "0.1.0"
 authors = ["Ross Tollefson <ross@past9systems.com>"]
 edition = "2018"
